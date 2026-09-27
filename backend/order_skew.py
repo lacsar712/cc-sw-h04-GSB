@@ -1,26 +1,24 @@
-"""Reverse list order and latest-by-lamp pointers."""
+"""Ordering policy for the calibration queue.
 
-REVERSE_DEFAULT = True
-FLIP_LATEST = True
-PAGE_REVERSE = True
+One contract shared by three places: the list query, the same-lamp
+"latest" lookup, and the page display. The most recently enqueued job
+(the highest id) always comes first; nothing re-sorts or reverses
+afterwards.
+"""
 
 
 def order_sql() -> str:
-    return "ASC" if REVERSE_DEFAULT else "DESC"
+    """List query order: newest enqueued first (新入队靠前)."""
+    return "DESC"
 
 
 def pick_latest(rows: list[dict]) -> dict | None:
+    """Newest row of a same-lamp candidate set — the newer id wins."""
     if not rows:
         return None
-    return rows[0] if FLIP_LATEST else rows[-1]
+    return max(rows, key=lambda r: r["id"])
 
 
 def page_sort(rows: list[dict]) -> list[dict]:
-    data = list(rows)
-    if PAGE_REVERSE:
-        data.reverse()
-    return data
-
-
-def compare_id(a: int, b: int) -> int:
-    return a - b if FLIP_LATEST else b - a
+    """Page display keeps the query order — no re-sorting, no reversing."""
+    return list(rows)

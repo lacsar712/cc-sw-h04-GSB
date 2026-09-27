@@ -49,8 +49,6 @@ function logout() {
   <div class="app-root">
     <header v-if="token" class="topbar">
       <div class="brand">光谱波长校准台</div>
-      <!-- h04-trap-bar -->
-      <span class="nav-hint">整理中 · trap:h04</span>
       <nav class="nav">
         <router-link to="/" :class="{ active: isHome }">校准总览</router-link>
         <span class="nav-sep">|</span>
