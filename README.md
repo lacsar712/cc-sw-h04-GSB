@@ -29,3 +29,19 @@ docker compose up --build
 1. calibrator 登录后，种子「氦灯-587」合格、「汞灯-546」超差。
 2. 再提交超差样条，先待处理再出超差。
 3. inspector 不能提交。
+
+## 接口
+
+- `GET /api/jobs`：校准总表，按编号倒序（新入队靠前）。
+- `GET /api/jobs/latest?lamp=<灯种>`：同灯种最近一次任务（落到较新编号）。
+- `GET /api/jobs/{id}`：任务详情。
+- `POST /api/jobs`：入队（仅 writer）。
+
+## 测试
+
+```bash
+pip install -r backend/requirements-dev.txt
+python3 -m pytest backend/tests
+```
+
+用例覆盖：列表查询次序、同灯种最近检索、页面展示不倒序、氦灯合格/汞灯超差。

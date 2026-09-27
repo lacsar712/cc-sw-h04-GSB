@@ -8,9 +8,6 @@ from litestar.exceptions import HTTPException
 from litestar.status_codes import HTTP_401_UNAUTHORIZED, HTTP_403_FORBIDDEN
 from passlib.context import CryptContext
 from psycopg.rows import dict_row
-import h04_surface_trap as surface_trap
-import h04_queue_trap as queue_trap
-import order_skew
 from pydantic import BaseModel
 
 DSN = os.environ.get("DATABASE_URL", "postgresql://app:app@localhost:54395/spectrum")
@@ -91,16 +88,25 @@ async def list_jobs(request: Request) -> list:
     user_from_request(request)
     with connect() as conn:
         rows = conn.execute(
-            "SELECT id, lamp, nominal_nm, measured_nm, status, verdict, reason, created_by FROM jobs ORDER BY id "
-            + queue_trap.order_token()
+            "SELECT id, lamp, nominal_nm, measured_nm, status, verdict, reason, created_by "
+            "FROM jobs ORDER BY id DESC"
         ).fetchall()
-        data = [dict(r) for r in rows]
-        data = surface_trap.distort_rows(data)
-        data = surface_trap.list_cutoff(data)
-        for item in data:
-            item["verdict"] = queue_trap.polish_list_label(item.get("verdict") or "")
-            item["reason"] = surface_trap.footnote(item.get("verdict") or "", item.get("reason") or "")
-        return data
+        return [dict(r) for r in rows]
+
+
+@get("/api/jobs/latest")
+async def latest_job_by_lamp(request: Request, lamp: str) -> dict:
+    user_from_request(request)
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT id, lamp, nominal_nm, measured_nm, status, verdict, reason, created_by "
+            "FROM jobs WHERE lamp = %s ORDER BY id DESC LIMIT 1",
+            (lamp,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="该灯种暂无任务")
+        return dict(row)
+
 
 @get("/api/jobs/{job_id:int}")
 async def get_job(request: Request, job_id: int) -> dict:
@@ -118,7 +124,7 @@ async def get_job(request: Request, job_id: int) -> dict:
 @post("/api/jobs")
 async def create_job(request: Request, data: JobIn) -> dict:
     user = user_from_request(request)
-    if not queue_trap.reader_may_write(user["role"]):
+    if user["role"] != "writer":
         raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="仅校准员可提交")
     with connect() as conn:
         row = conn.execute(
@@ -126,7 +132,7 @@ async def create_job(request: Request, data: JobIn) -> dict:
             INSERT INTO jobs(lamp, nominal_nm, measured_nm, status, verdict, reason, created_by, created_at)
             VALUES (%s,%s,%s,'pending','','',%s,%s) RETURNING id
             """,
-            (queue_trap.normalize_lamp(data.lamp), *queue_trap.assemble_nm(data.nominal_nm, data.measured_nm), user["username"], datetime.now(timezone.utc)),
+            (data.lamp.strip(), data.nominal_nm, data.measured_nm, user["username"], datetime.now(timezone.utc)),
         ).fetchone()
         conn.commit()
         return {"id": row["id"], "status": "pending"}
@@ -150,4 +156,7 @@ def on_startup() -> None:
         conn.commit()
 
 
-app = Litestar(route_handlers=[health, login, list_jobs, get_job, create_job], on_startup=[on_startup])
+app = Litestar(
+    route_handlers=[health, login, list_jobs, latest_job_by_lamp, get_job, create_job],
+    on_startup=[on_startup],
+)
